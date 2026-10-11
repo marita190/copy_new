@@ -2,6 +2,7 @@
 import sqlite3
 import time
 import os
+from init_db import init_db
 from flask import Flask, request, jsonify, g, render_template
 
 
@@ -206,4 +207,6 @@ def oob():
     return jsonify({"query": username, "error": error, "leaked": leaked})
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    if not os.path.exists(DB):
+        init_db()
+    app.run(host="0.0.0.0", port=5000, debug=False)
