@@ -1,11 +1,16 @@
 """Уязвимый SQLi-стенд"""
 import sqlite3
 import time
+import os
 from flask import Flask, request, jsonify, g, render_template
 
 
 app = Flask(__name__, template_folder="templates")
 DB = "lab_database.db"
+
+OOB_DIR = "oob_channel"
+os.makedirs(OOB_DIR, exist_ok=True)
+
 
 def get_db():
     """
@@ -125,6 +130,80 @@ def check_user_slow():
         pass
     return jsonify({"time": time.time() - start})
 
+# ============ OUT-OF-BAND SQLi ============
+def read_leaked_file(file_path):
+    """
+    читает по заданному пути файл, созданный через ATTACH DATABASE, как SQLite-БД
+    возвращает содержимое всех таблиц
+    """
+    result = {}
+    try:
+        connection = sqlite3.connect(file_path)
+        cursor = connection.cursor()
+
+        # узнаем все таблицы
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        # читаем строки для каждой таблицы
+        for table in tables:
+            try:
+                cursor.execute(f"SELECT * FROM {table}")
+                rows = cursor.fetchall()
+
+                # имена столбцов
+                cols = [d[0] for d in cursor.description] if cursor.description else []
+                result[table] = {"columns": cols, "rows": [list(r) for r in rows]}
+            except Exception as e:
+                result[table] = {"error": str(e)}
+
+        connection.close()
+    except Exception as e:
+        result["_error"] = str(e)
+
+    return result
+
+
+@app.route("/api/oob")
+def oob():
+    """
+    пример внеполосной инъекции (симуляция)
+    -нельзя получить результат, через тот же канал, что и атаку
+    уязвимости:
+        1) конкатенация строк
+        2) использование executescript (для множественных SQL-запросов)
+        3) СУБД может создавать файлы на диске
+    """
+
+    username = request.args.get("username", "")
+
+    # подключение к бд
+    connection = get_db()
+    cursor = connection.cursor()
+
+    # вополнение запроса
+    query = f"SELECT id, username FROM Users WHERE username='{username}'"
+    error = None
+    try:
+        cursor.executescript(query)
+        connection.commit()
+    except Exception as e:
+        error = str(e)
+
+    # проверяем папку oob-channel на новые файлы
+    time.sleep(0.1)
+    leaked = []
+    for file_name in os.listdir(OOB_DIR):
+        file_path = os.path.join(OOB_DIR, file_name)
+        if os.path.isfile(file_path):
+            dumped = read_leaked_file(file_path)
+            if dumped:
+                leaked.append({"file": file_name, "content": dumped})
+
+    with open("oob.log", "a") as file:
+        file.write(f"{time.time()} {username} {leaked}")
+
+    return jsonify({"query": username, "error": error, "leaked": leaked})
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
