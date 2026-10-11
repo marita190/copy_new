@@ -39,14 +39,15 @@ def health():
     return jsonify({"status": "OK"})
 
 
-# ============ ERROR-BASED SQLi ============
+# ============ IN-BAND ============
 @app.route("/api/login", methods=["POST"])
 def login():
     """
     пример SQL-инъекции в API-логине
+    In-band SQLi: auth bypass + union + error-based
     уязвимости:
         1) конкатенация строк в SQL - при подстановки "' OR 1=1--" в username
-            СУБД вернет первую попавшуюся строку - admin
+            СУБД вернет первую попавшуюся строку - admin, a "x' UNION SELECT id, secret_usser, secret_usser FROM Secrets-- -" - его секрет
         2) утечка ошибок SQL => можно получить информацию о структуре бд
     """
 
@@ -69,6 +70,34 @@ def login():
         return jsonify({"status": "fail", "query": query}), 401
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
-    
+
+# ============ BLIND-BOOLEAN SQLi ============
+@app.route("/api/check_user", methods=["GET"])
+def check_user():
+    """
+    пример слепой булевой инъекции
+    уязвимости:
+        1) конкатенация строк
+        2) разный результат в зависимости от TRUE/FALSE
+        
+    """
+
+    # подключение к бд
+    connection = get_db()
+    cursor = connection.cursor()
+
+    # вополнение запроса
+    pid = request.args.get("id", "1")
+    query = f"SELECT id FROM Users WHERE id='{pid}'"
+
+    try:
+        cursor.execute(query)
+        row = cursor.fetchone()
+        return jsonify({"query": query, "result": row is not None})
+    except Exception:
+        return jsonify({"query": query, "result": False})
+
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
