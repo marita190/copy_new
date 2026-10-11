@@ -28,6 +28,19 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+  # ========= тренировочный стенд для SQLi =========
+  sqli-lab-backend:
+    build: laboratorys/sqli
+    container_name: sqli-lab-backend
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
   agent:
     build: . # сборка из Dockerfile
     container_name: cyber-security-agent
@@ -41,12 +54,15 @@ services:
       - TARGET_URL=http://juice-shop:3000
       - SOURCE_PATH=/app/juice-shop
       - RULES_PATH=/app/rules/rules_semgrep.yaml
+      - SQLI_LAB_URL=http://sqli-lab-backend:5000
+      - SQLI_SOURCE_PATH=/app/sqli-lab
     env_file:
       - .env #болле универсально: естли есть langsmith
     volumes:
       - ./reports:/app/reports # папка отчетов
       - ./juice-shop:/app/juice-shop:ro
       - ./target:/app/target:ro  
+      - ./sqli-lab:/app/sqli-lab:ro 
     working_dir: /app
     command: >
       python -u agent.py
