@@ -1,5 +1,6 @@
 """Уязвимый SQLi-стенд"""
 import sqlite3
+import time
 from flask import Flask, request, jsonify, g, render_template
 
 
@@ -97,6 +98,32 @@ def check_user():
     except Exception:
         return jsonify({"query": query, "result": False})
 
+# ============ BLIND-TIME SQLi ============
+@app.route("/api/check_user_slow")
+def check_user_slow():
+    """
+    пример слепой временной инъекции
+    уязвимости:
+        1) конкатенация строк
+        2) ответ приходит с задержкой, зависящей от TRUE/FALSE
+    """
+
+    username = request.args.get("username", "")
+
+    # подключение к бд
+    connection = get_db()
+    cursor = connection.cursor()
+
+    # вополнение запроса
+    query = f"SELECT COUNT(*) FROM Users WHERE username='{username}'"
+    start = time.time()
+
+    try:
+        cursor.execute(query)
+        cursor.fetchone()
+    except Exception:
+        pass
+    return jsonify({"time": time.time() - start})
 
 
 if __name__ == "__main__":
