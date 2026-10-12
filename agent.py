@@ -287,11 +287,11 @@ if __name__ == "__main__":
 
     # ============ отчет ============
     report = result.get("final_res", "Агент не сформировал отчёт.")
-    print(f'{"=" * 30}\nИТОГОВЫЙ ОТЧЕТ:\n{report}\n{"=" * 30}')
+    print(f'{"=" * 30}\nИТОГОВЫЙ ОТЧЁТ:\n{report}\n{"=" * 30}')
 
     reports_dir = Path("reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = reports_dir / "report.md"
     with open(report_path, "w", encoding="utf-8") as file:
         file.write(report)
-    print(f"\nОЧЕТ СОХРАНЕН: {report_path.resolve()}")
+    print(f"\nОТЧЁТ СОХРАНЕН: {report_path.resolve()}")
