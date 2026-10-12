@@ -79,6 +79,45 @@ services:
       timeout: 3s
       retries: 10
     networks: [file-inclusion-lab]
+  # ========= тренировочный стенд для SSRF =========
+  admin-app:
+    build:
+      context: ./target
+      dockerfile: Dockerfile.flask
+    container_name: admin-app
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  ssrf-flask:
+    build:
+      context: ./target
+      dockerfile: Dockerfile.ssrf-flask
+    container_name: ssrf-flask
+    ports:
+      - "8090:8080"       
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  streamlit-app:
+    build:
+      context: ./target
+      dockerfile: Dockerfile.streamlit
+    container_name: streamlit-app
+    ports:
+      - "8501:8501"
+    depends_on:
+      admin-app:
+        condition: service_healthy
+    restart: unless-stopped
   agent:
     build:
       context: .
@@ -90,6 +129,10 @@ services:
         condition: service_healthy
       juice-shop-source:
         condition: service_completed_successfully
+      admin-app:
+        condition: service_healthy
+      ssrf-flask:
+        condition: service_healthy
     # ========= переменные окружения =========
     environment:
       - TARGET_URL=http://juice-shop:3000
