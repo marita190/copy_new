@@ -38,11 +38,24 @@ class AgentState(TypedDict):
     revision_count: int
     final_res: str
     tools_call_count: int
+    finding: dict
 
 def agent_node(state: AgentState) -> dict:
-    messages = state["messages"]
+    messages = list(state["messages"])
     if not messages or not isinstance(messages[0], SystemMessage):
-        messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
+        messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
+    finding = state.get("finding")
+    if finding:
+        messages.append(
+            HumanMessage(
+                content=(
+                    "Вот структурированный результат анализа инструмента:\n"
+                    f"{finding}\n\n"
+                    "Используй его при формировании итогового отчёта. "
+                    "Не искажай доказательства и не придумывай новые факты."
+                )
+            )
+        )
     response = llm_tools.invoke(messages)
     newres = {"messages": [response]}
     if not getattr(response, "tool_calls", None):
@@ -70,6 +83,33 @@ def tools_node(state: AgentState) -> dict:
 
     return {"messages": tool_messages,
             "tools_call_count": state.get("tools_call_count", 0) + 1}
+
+def finding_node(state: AgentState) -> dict:
+    # Преобразует результаты инструментов в структурированный Finding
+
+    messages = state["messages"]
+    tool_results = [
+        m.content
+        for m in messages
+        if isinstance(m, ToolMessage)
+    ]
+
+    if not tool_results:
+        return {}
+
+    structured_llm = llm.with_structured_output(Finding)
+
+    prompt = f"""
+    Проанализируй результаты инструментов безопасности: {tool_results}. Сформируй одну находку безопасности.
+    Не придумывай уязвимость, если доказательств недостаточно.
+    В таком случае используй status="requires_verification".
+    """
+
+    finding = structured_llm.invoke(prompt)
+
+    return {
+        "finding": finding.model_dump()
+    }
 
 def critic_node(state: AgentState) -> dict:
     """Оценивает финальный отчёт агента."""
@@ -117,6 +157,7 @@ def should_condition(state: AgentState) -> str:
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
+workflow.add_node("finding", finding_node)
 workflow.add_node("critic", critic_node) 
 workflow.add_edge(START, "agent")
 workflow.add_conditional_edges(
@@ -127,7 +168,8 @@ workflow.add_conditional_edges(
         "end": "critic",
     },
 )
-workflow.add_edge("tools", "agent")
+workflow.add_edge("tools", "finding")
+workflow.add_edge("finding", "agent")
 workflow.add_conditional_edges(
     "critic",
     should_revise,
