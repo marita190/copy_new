@@ -112,3 +112,27 @@ services:
       --url http://juice-shop:3000
       --source /app/juice-shop
       --rules /app/rules/rules_semgrep.yaml
+
+
+# DAN
+  dan-llm:
+    build: dan_llm
+    container_name: dan-llm
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
