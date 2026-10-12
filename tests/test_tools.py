@@ -12,15 +12,18 @@ import requests
 
 from tools import (
     check_idor,
+    list_files,
     read_file,
     read_file_around_line,
     run_nuclei,
     run_semgrep,
     run_zap_scan,
+    test_sqli_lab as sqli_lab_tool,
     test_sqli_login as sqli_login_tool,
 )
 
 zap_module = import_module("tools.run_zap_scan")
+sqli_lab_module = import_module("tools.test_sqli_lab")
 
 
 def test_read_file_returns_content_and_metadata(tmp_path):
@@ -186,19 +189,25 @@ def test_semgrep_reports_missing_source_without_running_scan(tmp_path):
     assert "не найден путь" in result
 
 
-def test_semgrep_reports_missing_rules_without_running_scan(tmp_path):
+def test_semgrep_reports_scan_failure_for_missing_rules(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
+    missing_rules = tmp_path / "missing.yaml"
 
-    def unexpected_run(*args, **kwargs):
-        pytest.fail("Semgrep must not run when the rules path is missing")
-
-    with patch.object(subprocess, "run", side_effect=unexpected_run):
+    with patch.object(
+        subprocess, "run", return_value=SimpleNamespace(returncode=2, stdout="")
+    ) as run:
         result = run_semgrep.invoke(
-            {"source_path": str(source), "rules_path": str(tmp_path / "missing.yaml")}
+            {"source_path": str(source), "rules_path": str(missing_rules)}
         )
 
-    assert "не найден файл" in result
+    run.assert_called_once_with(
+        ["semgrep", "scan", "--config", str(missing_rules),
+         "--json", "--metrics", "off", str(source)],
+        capture_output=True, text=True, timeout=600,
+    )
+    assert "ошибка" in result
+    assert "кодом 2" in result
 
 
 def test_semgrep_summarizes_findings(tmp_path):
@@ -700,3 +709,232 @@ def test_zap_limits_returned_alerts_to_thirty(zap_report_dir):
     assert len(result["alerts"]) == 30
     assert result["alerts"][-1]["alert"] == "alert-29"
     assert result["alerts"][0]["instances_count"] == 0
+
+
+def test_list_files_returns_sorted_files_and_total(tmp_path):
+    (tmp_path / "z_last.py").write_text("last", encoding="utf-8")
+    (tmp_path / "a_first.py").write_text("first", encoding="utf-8")
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "child.py").write_text("child", encoding="utf-8")
+
+    result = list_files.invoke({"path": str(tmp_path)})
+
+    assert result.startswith(f"Каталог {tmp_path} — 3 файлов:\n")
+    assert f"{tmp_path.name}/" in result
+    assert "nested/" in result
+    assert "child.py" in result
+    assert result.index("a_first.py") < result.index("z_last.py")
+
+
+@pytest.mark.parametrize(
+    "directory", [".git", "__pycache__", ".venv", "venv", "node_modules"]
+)
+def test_list_files_ignores_generated_and_dependency_directories(tmp_path, directory):
+    ignored = tmp_path / directory / "nested"
+    ignored.mkdir(parents=True)
+    (ignored / "hidden_file.py").write_text("hidden", encoding="utf-8")
+    (tmp_path / "visible.py").write_text("visible", encoding="utf-8")
+
+    result = list_files.invoke({"path": str(tmp_path)})
+
+    assert result.startswith(f"Каталог {tmp_path} — 1 файлов:\n")
+    assert "visible.py" in result
+    assert f"{directory}/" not in result
+    assert "hidden_file.py" not in result
+
+
+def test_list_files_reports_missing_path(tmp_path):
+    missing = tmp_path / "missing"
+
+    result = list_files.invoke({"path": str(missing)})
+
+    assert result == f"не найден путь: {missing}"
+
+
+def test_list_files_rejects_file_path(tmp_path):
+    source = tmp_path / "example.py"
+    source.write_text("sample", encoding="utf-8")
+
+    result = list_files.invoke({"path": str(source)})
+
+    assert result == f"это не каталог: {source}"
+
+
+def test_list_files_reports_empty_directory(tmp_path):
+    result = list_files.invoke({"path": str(tmp_path)})
+
+    assert result == f"в {tmp_path} нет файлов"
+
+
+@pytest.mark.xfail(
+    os.name == "nt",
+    strict=True,
+    raises=AssertionError,
+    reason="list_files counts only forward slashes when calculating directory depth",
+)
+def test_list_files_respects_max_depth(tmp_path):
+    (tmp_path / "root.py").write_text("root", encoding="utf-8")
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "included.py").write_text("included", encoding="utf-8")
+    grandchild = child / "grandchild"
+    grandchild.mkdir()
+    (grandchild / "excluded.py").write_text("excluded", encoding="utf-8")
+
+    result = list_files.invoke({"path": str(tmp_path), "max_depth": 1})
+
+    assert "excluded.py" not in result
+    assert "grandchild/" not in result
+    assert result.startswith(f"Каталог {tmp_path} — 2 файлов:\n")
+    assert "root.py" in result
+    assert "included.py" in result
+
+
+def test_sqli_lab_get_uses_default_parameter_and_reports_neutral_response():
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=200, text="No matching user"),
+    ) as get, patch.object(sqli_lab_module.requests, "post") as post:
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1 OR 1=1",
+        })
+
+    get.assert_called_once_with(
+        "http://example.test/api/check_user", params={"q": "1 OR 1=1"}, timeout=30,
+    )
+    post.assert_not_called()
+    assert result == (
+        "URL: http://example.test/api/check_user\n"
+        "payload: 1 OR 1=1\n"
+        "status: 200\n"
+        "вердикт: ОК\n"
+        "indicators: []\n"
+        "body: No matching user"
+    )
+
+
+def test_sqli_lab_post_uses_custom_parameter_and_accepts_lowercase_method():
+    payload = "admin' --"
+    with patch.object(
+        sqli_lab_module.requests, "post",
+        return_value=SimpleNamespace(status_code=401, text="Invalid credentials"),
+    ) as post, patch.object(sqli_lab_module.requests, "get") as get:
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/login",
+            "payload": payload, "param": "username", "method": "post",
+        })
+
+    post.assert_called_once_with(
+        "http://example.test/api/login", json={"username": payload}, timeout=30,
+    )
+    get.assert_not_called()
+    assert "status: 401\n" in result
+    assert "вердикт: ОК\n" in result
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "indicator"),
+    [
+        (200, '{"status": "OK"}', "auth bypass status OK"),
+        (500, "SQL Syntax ERROR", "SQL-ошибка в ответе"),
+        (200, "FLAG{test-secret-value}", "утечка секрета (FLAG)"),
+        (200, "SECRET value exposed", "утечка secrets"),
+    ],
+)
+def test_sqli_lab_reports_sqli_indicators(status, body, indicator):
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=status, text=body),
+    ):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1'", "param": "id",
+        })
+
+    assert "вердикт: SQLi ПОДТВЕРЖДЁН\n" in result
+    assert indicator in result.split("indicators: ", 1)[1].split("\n", 1)[0]
+    assert f"status: {status}\n" in result
+    assert result.endswith(f"body: {body}")
+
+
+def test_sqli_lab_collects_all_indicators():
+    body = '{"status": "OK", "error": "SQL", "secret": "FLAG{sample}"}'
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=200, text=body),
+    ):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/login",
+            "payload": "1'",
+        })
+
+    assert (
+        "indicators: ['auth bypass status OK', 'SQL-ошибка в ответе', "
+        "'утечка секрета (FLAG)', 'утечка secrets']\n"
+    ) in result
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [(401, '{"status": "OK"}'), (200, "SQL query completed"), (500, "Internal error")],
+)
+def test_sqli_lab_does_not_flag_responses_without_matching_indicators(status, body):
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=status, text=body),
+    ):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1",
+        })
+
+    assert "вердикт: ОК\n" in result
+    assert "indicators: []\n" in result
+
+
+@pytest.mark.parametrize("body", [None, ""])
+def test_sqli_lab_handles_empty_response_body(body):
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=204, text=body),
+    ):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1",
+        })
+
+    assert result.endswith("body: ")
+    assert "вердикт: ОК\n" in result
+
+
+def test_sqli_lab_limits_response_body_to_fifteen_hundred_characters():
+    body = "x" * 1500 + "END"
+    with patch.object(
+        sqli_lab_module.requests, "get",
+        return_value=SimpleNamespace(status_code=200, text=body),
+    ):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1",
+        })
+
+    assert result.split("body: ", 1)[1] == "x" * 1500
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize(
+    "error",
+    [requests.exceptions.Timeout("request timed out"),
+     requests.exceptions.ConnectionError("connection refused")],
+)
+def test_sqli_lab_reports_request_errors(method, error):
+    request_name = method.lower()
+    with patch.object(sqli_lab_module.requests, request_name, side_effect=error):
+        result = sqli_lab_tool.invoke({
+            "base_url": "http://example.test", "endpoint": "/api/check_user",
+            "payload": "1'", "method": method,
+        })
+
+    assert result == f"ошибка: {error}"
