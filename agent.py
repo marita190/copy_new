@@ -139,7 +139,7 @@ def critic_node(state: AgentState) -> dict:
 
 def should_revise(state: AgentState) -> str:
     """После критика: либо переписать результат, либо вывести ответ llm."""
-    if state.get("revision_count", 0) >= 2:
+    if state.get("revision_count", 0) >= MAX_REVISIONS:
         return "end"  
     last = state["messages"][-1]
     if isinstance(last, HumanMessage) and "Критик нашёл проблемы" in last.content:
