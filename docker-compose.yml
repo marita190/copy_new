@@ -62,7 +62,7 @@ services:
       - ./reports:/app/reports # папка отчетов
       - ./juice-shop:/app/juice-shop:ro
       - ./target:/app/target:ro  
-      - ./sqli-lab:/app/sqli-lab:ro 
+      - ./laboratorys/sqli:/app/sqli-lab:ro
     working_dir: /app
     command: >
       python -u agent.py
