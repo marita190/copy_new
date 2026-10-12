@@ -13,11 +13,15 @@ def home():
 
 @app.route("/admin")
 def admin():
+    items = "\n".join(
+        f'<li>{u} <a href="/admin/delete?username={u}">delete</a></li>'
+        for u in USERS
+    )
     return f"""
     <h1>Admin Panel</h1>
     <p>Secret token: {SECRET_TOKEN}</p>
     <ul>
-        {''.join(f'<li>{u} <a href="/admin/delete?username={u}">delete</a></li>\n' for u in USERS)}
+        {items}
     </ul>
     """
 
@@ -42,4 +46,4 @@ def metadata():
     })
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8080, debug=False)
+    app.run(host="0.0.0.0", port=8080, debug=False)

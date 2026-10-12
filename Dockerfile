@@ -10,12 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ======== nuclei (DAST) ========
-RUN curl -sSfL https://raw.githubusercontent.com/projectdiscovery/nuclei/main/cmd/nuclei/nuclei_install.sh \
-    | sh -s -- -b /usr/local/bin \
-    || (curl -sSL https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | grep tag_name | cut -d '"' -f4 | tr -d 'v')_linux_amd64.zip -o nuclei.zip \
-        && unzip nuclei.zip -d /usr/local/bin \
-        && rm nuclei.zip)
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 
+RUN ARCH=$(dpkg --print-architecture) && \
+    case "$ARCH" in \
+      amd64) NUCLEI_ARCH="linux_amd64" ;; \
+      arm64) NUCLEI_ARCH="linux_arm64" ;; \
+      *) NUCLEI_ARCH="linux_amd64" ;; \
+    esac && \
+    NUCLEI_VER=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | grep tag_name | cut -d '"' -f4 | tr -d 'v') && \
+    echo "Installing nuclei v${NUCLEI_VER} for ${NUCLEI_ARCH}" && \
+    curl -sSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VER}/nuclei_${NUCLEI_VER}_${NUCLEI_ARCH}.zip" -o /tmp/nuclei.zip && \
+    unzip /tmp/nuclei.zip -d /usr/local/bin && \
+    rm /tmp/nuclei.zip && \
+    chmod +x /usr/local/bin/nuclei && \
+    nuclei -version
+    
 # ======== Python-зависимости ========
 COPY requirements.txt .
 RUN pip install --no-cache-dir uv
