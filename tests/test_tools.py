@@ -1,14 +1,24 @@
 """Behavioral tests for the tools exposed to the security agent."""
 
+from contextlib import contextmanager
 import json
 import os
 import subprocess
+import sys
+from pathlib import Path
+from threading import Thread
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 import requests
+from werkzeug.serving import make_server, WSGIRequestHandler
+
+from target.LFI_RFI_service import app as file_inclusion_app, PUBLIC_DIR as FILE_INCLUSION_PUBLIC_DIR
+from target.LFI_RFI_remote import app as file_inclusion_remote_app
+from tools import run_file_inclusion_agent as file_inclusion_agent_launcher
+from tools.file_inclusion_probe import scan_lab as scan_file_inclusion_lab
 
 from tools import (
     check_idor,
@@ -938,3 +948,194 @@ def test_sqli_lab_reports_request_errors(method, error):
         })
 
     assert result == f"ошибка: {error}"
+
+
+# LFI / RFI: local fixtures, real HTTP checks, and false-positive controls.
+
+FILE_INCLUSION_ROOT = Path(__file__).resolve().parents[1]
+
+
+class FileInclusionQuietHandler(WSGIRequestHandler):
+    def log(self, *args, **kwargs):
+        pass
+
+
+@contextmanager
+def _serve_file_inclusion(app):
+    server = make_server("127.0.0.1", 0, app, threaded=True,
+                         request_handler=FileInclusionQuietHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+
+@pytest.fixture(scope="module")
+def file_inclusion_servers():
+    with _serve_file_inclusion(file_inclusion_remote_app) as remote, _serve_file_inclusion(file_inclusion_app) as target:
+        yield target, remote + "/payload.py"
+
+
+def test_file_inclusion_local_baseline_and_path_traversal_execute_different_modules():
+    with file_inclusion_app.test_client() as client:
+        baseline = client.get("/api/lfi", query_string={"file": "welcome.py"})
+        exploit = client.get("/api/lfi", query_string={"file": "../fi_private_page.py"})
+    assert baseline.status_code == exploit.status_code == 200
+    assert baseline.json["content"] == "WELCOME_FILE_INCLUSION_LAB"
+    assert exploit.json["content"] == "LFI_PRIVATE_FIXTURE:42"
+    # Reading source alone would not produce the computed inclusion result.
+    source = (FILE_INCLUSION_PUBLIC_DIR.parent / "fi_private_page.py").read_text(encoding="utf-8")
+    assert exploit.json["content"] not in source
+
+
+@pytest.mark.parametrize("filename", [
+    "../fi_private_page.py",
+    str((FILE_INCLUSION_PUBLIC_DIR.parent / "fi_private_page.py").resolve()),
+    "../../app.py",
+])
+def test_file_inclusion_fixed_lfi_rejects_traversal_and_absolute_paths(filename):
+    with file_inclusion_app.test_client() as client:
+        response = client.get("/api/lfi-safe", query_string={"file": filename})
+        baseline = client.get("/api/lfi-safe", query_string={"file": "welcome.py"})
+    assert response.status_code == 403
+    assert "content" not in response.json
+    assert baseline.status_code == 200
+    assert baseline.json["content"] == "WELCOME_FILE_INCLUSION_LAB"
+
+
+def test_file_inclusion_missing_file_and_missing_remote_url_are_not_successes():
+    with file_inclusion_app.test_client() as client:
+        assert client.get("/api/lfi?file=missing.py").status_code == 404
+        assert client.get("/api/rfi").status_code == 400
+
+
+def test_file_inclusion_remote_fixture_is_executed_rather_than_only_downloaded(file_inclusion_servers):
+    target, remote = file_inclusion_servers
+    payload_url = remote + "?nonce=execution-proof"
+    source = requests.get(payload_url, timeout=5).text
+    expected = "RFI_EXECUTED:execution-proof:42"
+    assert expected not in source
+    response = requests.get(target + "/api/rfi", params={"url": payload_url}, timeout=10)
+    assert response.status_code == 200
+    assert response.json()["content"] == expected
+
+
+def test_file_inclusion_remote_nonce_cannot_inject_code_into_fixture(file_inclusion_servers):
+    _, remote = file_inclusion_servers
+    nonce = "'; raise RuntimeError('injected'); #"
+    source = requests.get(remote, params={"nonce": nonce}, timeout=5).text
+    namespace = {}
+    exec(source, namespace)
+    assert namespace["CONTENT"] == f"RFI_EXECUTED:{nonce}:42"
+
+
+def test_file_inclusion_fixed_rfi_does_not_even_fetch_remote_code():
+    with patch("target.LFI_RFI_service.requests.get") as get:
+        with file_inclusion_app.test_client() as client:
+            response = client.get("/api/rfi-safe", query_string={
+                "url": "http://127.0.0.1:5102/payload.py",
+            })
+    assert response.status_code == 403
+    get.assert_not_called()
+
+
+def test_file_inclusion_scanner_confirms_both_vulnerabilities_with_separate_evidence(file_inclusion_servers):
+    target, remote = file_inclusion_servers
+    report = scan_file_inclusion_lab(target, remote + "?nonce=old&keep=value")
+    lfi, rfi = report["checks"]
+    assert (lfi["type"], lfi["status"]) == ("LFI", "confirmed")
+    assert (rfi["type"], rfi["status"]) == ("RFI", "confirmed")
+    evidence = rfi["evidence"]
+    response = evidence["payload_response"]
+    assert response["content"] == evidence["expected_execution_result"]
+    assert response["content"] not in response["params"]["url"]
+    assert "keep=value" in response["params"]["url"]
+    assert "nonce=old" not in response["params"]["url"]
+
+
+def test_file_inclusion_scanner_does_not_confirm_fixed_controls(file_inclusion_servers):
+    target, remote = file_inclusion_servers
+    report = scan_file_inclusion_lab(target, remote, "/api/lfi-safe", "/api/rfi-safe")
+    for check in report["checks"]:
+        assert check["status"] == "requires_verification"
+        assert check["evidence"]["payload_response"]["status_code"] == 403
+
+
+@pytest.mark.parametrize("body,status", [
+    ({"content": "LFI RFI error /etc/passwd"}, 200),
+    ({"content": "LFI_PRIVATE_FIXTURE:42"}, 500),
+    (["LFI_PRIVATE_FIXTURE:42"], 200),
+    ("downloaded remote source", 200),
+])
+def test_file_inclusion_generic_bodies_and_error_codes_are_not_proof(body, status):
+    response = requests.Response()
+    response.status_code = status
+    response.url = "http://lab.test/api/lfi"
+    response._content = json.dumps(body).encode()
+    with patch("tools.file_inclusion_probe.requests.get", return_value=response):
+        report = scan_file_inclusion_lab("http://lab.test", "http://fixture.test/payload.py")
+    assert all(item["status"] == "requires_verification" for item in report["checks"])
+
+
+def test_file_inclusion_network_failures_preserve_both_checks_without_claiming_security():
+    with patch("tools.file_inclusion_probe.requests.get",
+               side_effect=requests.Timeout("timeout")):
+        report = scan_file_inclusion_lab("http://lab.test", "http://fixture.test/payload.py")
+    for check in report["checks"]:
+        assert check["status"] == "requires_verification"
+        assert check["evidence"]["payload_response"]["error"] == "timeout"
+
+
+@pytest.mark.parametrize("endpoint", ["https://other.test", "//other.test", "api/lfi"])
+def test_file_inclusion_scanner_rejects_nonlocal_endpoint_paths(endpoint):
+    with pytest.raises(ValueError, match="Endpoints"):
+        scan_file_inclusion_lab("http://lab.test", "http://fixture.test/payload.py", endpoint)
+
+
+def test_file_inclusion_cli_saves_a_real_report_without_an_llm(file_inclusion_servers, tmp_path):
+    target, remote = file_inclusion_servers
+    output = tmp_path / "scan.json"
+    result = subprocess.run([
+        sys.executable, str(FILE_INCLUSION_ROOT / "tools" / "file_inclusion_probe.py"), "--url", target,
+        "--remote-url", remote, "--output", str(output),
+    ], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved == json.loads(result.stdout)
+    assert all(check["status"] == "confirmed" for check in saved["checks"])
+
+
+def test_file_inclusion_optional_agent_tool_is_usable_without_modifying_shared_registry(file_inclusion_servers):
+    import tools
+    original_names = [item.name for item in tools.ALL_TOOLS]
+    from tools import check_file_inclusion
+
+    target, remote = file_inclusion_servers
+    report = json.loads(check_file_inclusion.invoke({
+        "base_url": target, "remote_payload_url": remote,
+    }))
+    assert all(check["status"] == "confirmed" for check in report["checks"])
+    assert [item.name for item in tools.ALL_TOOLS] == original_names
+
+
+def test_file_inclusion_launcher_passes_a_scoped_task_to_the_existing_agent(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [
+        "run_file_inclusion_agent.py", "--url", "http://lab.test",
+        "--remote-url", "http://fixture.test/payload.py",
+    ])
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.chdir(FILE_INCLUSION_ROOT)
+    with patch.object(file_inclusion_agent_launcher.runpy, "run_path") as launch:
+        file_inclusion_agent_launcher.main()
+        forwarded_args = list(sys.argv)
+    launch.assert_called_once_with(str(FILE_INCLUSION_ROOT / "agent.py"), run_name="__main__")
+    assert forwarded_args[:2] == [str(FILE_INCLUSION_ROOT / "agent.py"), "--task"]
+    assert "http://lab.test" in forwarded_args[2]
+    assert "http://fixture.test/payload.py" in forwarded_args[2]
+    assert repr(str((FILE_INCLUSION_ROOT / "rules" / "rules_semgrep.yaml").resolve())) in forwarded_args[2]
+    assert repr(str((FILE_INCLUSION_ROOT / "target" / "LFI_RFI_service.py").resolve())) in forwarded_args[2]
+    assert "/api/lfi-safe" in forwarded_args[2] and "/api/rfi-safe" in forwarded_args[2]

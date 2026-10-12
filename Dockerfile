@@ -1,4 +1,19 @@
-FROM python:3.11-slim
+# ======== учебный контур LFI/RFI ========
+FROM python:3.11-slim AS file-inclusion
+
+WORKDIR /lab
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY target/LFI_RFI_service.py target/LFI_RFI_remote.py target/fi_private_page.py ./
+COPY target/fi_pages/ ./fi_pages/
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LAB_HOST=0.0.0.0
+USER 10001:10001
+EXPOSE 5101 5102
+CMD ["python", "LFI_RFI_service.py"]
+
+# ======== агент (образ по умолчанию) ========
+FROM python:3.11-slim AS agent
 
 # ======== системные зависимости ========
 RUN apt-get update && apt-get install -y --no-install-recommends \

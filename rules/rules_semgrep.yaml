@@ -42,3 +42,36 @@ rules:
       category: crypto
       owasp: A02:2021
       cwe: CWE-798
+
+  - id: python-lfi-user-controlled-module
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      LFI: a request parameter reaches local Python module inclusion.
+      Select a trusted module using an allowlist instead of a user-supplied path.
+    pattern-sources:
+      - pattern: request.args.get(...)
+    pattern-sinks:
+      - pattern: runpy.run_path(...)
+    metadata:
+      category: security
+      vulnerability: LFI
+      cwe: CWE-22
+
+  - id: python-rfi-remote-code-execution
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      RFI: content from an HTTP response is executed as Python code.
+      Never execute untrusted remote content.
+    pattern-sources:
+      - pattern: requests.get(...)
+    pattern-sinks:
+      - pattern: exec($CODE, ...)
+        focus-metavariable: $CODE
+    metadata:
+      category: security
+      vulnerability: RFI
+      cwe: CWE-95

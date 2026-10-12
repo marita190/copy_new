@@ -41,8 +41,49 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+  # ========= отдельный профиль LFI/RFI =========
+  fi-lab:
+    profiles: [file-inclusion]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: file-inclusion
+    ports:
+      - "127.0.0.1:5101:5101"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5101/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [file-inclusion-lab]
+  fi-remote:
+    profiles: [file-inclusion]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: file-inclusion
+    command: ["python", "LFI_RFI_remote.py"]
+    ports:
+      - "127.0.0.1:5102:5102"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5102/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [file-inclusion-lab]
   agent:
-    build: . # сборка из Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: agent
     container_name: cyber-security-agent
     depends_on: 
       juice-shop:
@@ -64,12 +105,12 @@ services:
       - ./target:/app/target:ro  
       - ./laboratorys/sqli:/app/sqli-lab:ro
     working_dir: /app
+    networks: [default, file-inclusion-lab]
     command: >
       python -u agent.py
       --url http://juice-shop:3000
       --source /app/juice-shop
       --rules /app/rules/rules_semgrep.yaml
-
 
 # DAN
   dan-llm:
@@ -93,3 +134,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+networks:
+  default: {}
+  file-inclusion-lab:
+    internal: true
