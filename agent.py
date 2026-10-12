@@ -141,46 +141,115 @@ agent = workflow.compile()
 agent.get_graph().print_ascii()
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(
-        description="Агент по кибербезопасности: проверка веб-приложений на уязвимости")
-    parser.add_argument("--url", default=None, help="URL приложения")
-    parser.add_argument("--source", default=None, help="Путь к исходникам")
-    parser.add_argument("--rules", default=None, help="Путь к файлу правил Semgrep")
-    parser.add_argument("--idor-endpoint", default="/rest/basket", help="Точка входа для IDOR")
+        description="Агент по кибербезопасности: проверка веб-приложений на уязвимости"
+    )
+    parser.add_argument("--url", default=None, help="URL приложения (Juice Shop)")
+    parser.add_argument("--source", default=None, help="путь к исходникам Juice Shop")
+    parser.add_argument("--rules", default=None, help="путь к файлу правил Semgrep")
+
+    # ============ IDOR ============
+    parser.add_argument("--idor-endpoint", default="/rest/basket", help="точка входа для IDOR")
     parser.add_argument("--idor-id", default="1", help="ID объекта для IDOR")
-    parser.add_argument("--idor-token", default="test-token-123", help="Токен для IDOR")
-    parser.add_argument("--no-idor", action="store_true", help="Не проверять IDOR")
-    parser.add_argument("--no-semgrep", action="store_true", help="Не запускать Semgrep")
-    parser.add_argument("--task", default=None, help="Произвольная задача (перекрывает остальное)")
+    parser.add_argument("--idor-token", default="test-token-123", help="токен для IDOR")
+    parser.add_argument("--no-idor", action="store_true", help="не проверять IDOR")
+
+    # ============ Semgrep ============
+    parser.add_argument("--no-semgrep", action="store_true", help="не запускать Semgrep")
+
+    # ============ ZAP ============
+    parser.add_argument("--zap-url", default=None,
+                        help="URL для ZAP-сканирования")
+    parser.add_argument("--zap-mode", default="baseline",
+                        choices=["baseline", "full", "api"],
+                        help="Режим ZAP-сканирования")
+    parser.add_argument("--no-zap", action="store_true", help="не запускать ZAP")
+
+    # ============ SQLi Lab ============
+    parser.add_argument("--sqli-lab-url", default=None,
+                        help="URL SQLi Lab стенда")
+    parser.add_argument("--sqli-source", default=None,
+                        help="путь к исходникам SQLi Lab")
+    parser.add_argument("--no-sqli-lab", action="store_true",
+                        help="не проверять SQLi Lab")
+    
+    # ============ произвольная задача ============
+    parser.add_argument("--task", default=None,
+                        help="произвольная задача (перекрывает остальное)")
+
     args = parser.parse_args()
+
     if args.task:
         task = args.task
-    else:
-        SOURCE_PATH = args.source or os.getenv("SOURCE_PATH", "juice-shop")
-        TARGET_URL = args.url or os.getenv("TARGET_URL", "http://localhost:3000") 
+    else:  
+        # ============ чтение параметров ============
+        SOURCE_PATH = args.source or os.getenv("SOURCE_PATH", "/app/juice-shop")
+        TARGET_URL = args.url or os.getenv("TARGET_URL", "http://juice-shop:3000")
         RULES_PATH = args.rules or os.getenv("RULES_PATH", "/app/rules/rules_semgrep.yaml")
-        if not TARGET_URL:
-            TARGET_URL = input("URL приложения: ").strip() or "http://localhost:3000"
-        if not SOURCE_PATH:
-            SOURCE_PATH = input("Путь к исходникам: ").strip() or "juice-shop"
-        parts = [f"проверить приложение {TARGET_URL} на уязвимости"]
+        SQLI_LAB_URL = args.sqli_lab_url or os.getenv("SQLI_LAB_URL", "")
+        SQLI_SOURCE_PATH = args.sqli_source or os.getenv("SQLI_SOURCE_PATH", "")
+        ZAP_URL = args.zap_url or os.getenv("ZAP_URL", "")
+        ZAP_MODE = args.zap_mode
+
+
+        parts = [f"Проведи анализ защищённости приложения {TARGET_URL}."]
+
+        # ============ IDOR ============
         if not args.no_idor:
             parts.append(
-                f"проверить IDOR на точке входа {args.idor_endpoint} "
-                f"с id='{args.idor_id}' и токеном '{args.idor_token}'"
+                f"Проверь IDOR на точке входа {args.idor_endpoint} "
+                f"с id='{args.idor_id}' и токеном '{args.idor_token}'."
             )
+
+        # ============ Semgrep ============
         if not args.no_semgrep:
-            parts.append(f"запусти Semgrep на {SOURCE_PATH} с правилами {RULES_PATH}")
+            parts.append(
+                f"Запусти Semgrep на {SOURCE_PATH} с правилами {RULES_PATH}."
+            )
+
+        # ============ ZAP ============
+        if not args.no_zap and ZAP_URL:
+            parts.append(
+                f"Запусти ZAP-скан ({ZAP_MODE}) на {ZAP_URL}."
+            )
+
+        # ============ SQLi Lab ============
+        if not args.no_sqli_lab and SQLI_LAB_URL:
+            parts.append(
+                f"Проведи анализ SQLi на стенде {SQLI_LAB_URL}. "
+                f"Проверь эндпоинты: "
+                f"1) /api/login с payload \"' OR 1=1-- -\" (auth bypass); "
+                f"2) /api/login с payload "
+                f"\"x' UNION SELECT id, secret_usser, secret_usser FROM Secrets-- -\" (union); "
+                f"3) /api/check_user с payload \"1' AND 1=1-- -\" и "
+                f"\"1' AND 1=2-- -\" (blind boolean); "
+                f"4) /api/check_user_slow с payload \"admin\" и "
+                f"\"' OR (SELECT length(randomblob(100000000)))>0 AND 1=1-- -\" (time-based); "
+                f"5) /api/oob с payload "
+                f"\"admin'; ATTACH DATABASE 'oob_channel/leak.db' AS leak; "
+                f"CREATE TABLE leak.d(x); INSERT INTO leak.d SELECT secret_usser FROM Secrets; --\" (OOB)."
+            )
+            if SQLI_SOURCE_PATH:
+                parts.append(f"Запусти Semgrep на {SQLI_SOURCE_PATH}.")
+        
+        parts.append("Опиши найденные уязвимости с критичностью и рекомендациями.")
+
         task = " ".join(parts)
 
+     # ============ запуск ============
+    print(f'{"=" * 30}\nЗАДАЧА ДЛЯ АГЕНТА:\n{task}\n{"=" * 30}')
     result = agent.invoke({
         "messages": [HumanMessage(content=task)]
     })
 
+    # ============ отчет ============
     report = result.get("final_res", "Агент не сформировал отчёт.")
-    print(report)
+    print(f'{"=" * 30}\nИТОГОВЫЙ ОТЧЕТ:\n{report}\n{"=" * 30}')
+
     reports_dir = Path("reports")
-    reports_dir.mkdir(parents=True, exist_ok=True) 
+    reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = reports_dir / "report.md"
     with open(report_path, "w", encoding="utf-8") as file:
         file.write(report)
+    print(f"\nОЧЕТ СОХРАНЕН: {report_path.resolve()}")
