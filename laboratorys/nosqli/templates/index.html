@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>NoSQLi Lab</title>
+  <style>
+    body { font-family: monospace; max-width: 720px; margin: 40px auto; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+    h2 { border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>NoSQLi Lab (MongoDB)</h1>
+  <p>Стенд для отработки NoSQL-инъекций. Все эндпоинты уязвимы намеренно.</p>
+
+  <h2>Эндпоинты</h2>
+  <ul>
+    <li><code>POST /api/login</code> — in-band auth bypass</li>
+    <li><code>GET /api/check_user</code> — blind boolean ($regex)</li>
+    <li><code>GET /api/check_user_slow</code> — blind time ($where)</li>
+    <li><code>GET /api/search</code> — JS-injection в $where</li>
+  </ul>
+
+  <h2>Цель</h2>
+  <p>Вытащить secret пользователя admin и скрытый товар flag.</p>
+</body>
+</html>

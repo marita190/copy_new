@@ -145,3 +145,30 @@ python3 agent.py \
   --idor-id 42 \
   --idor-token "xyz"
 ```
+## NoSQLi Lab
+
+### Запуск лабы
+```bash
+docker compose up -d nosqli-lab-backend
+```
+будет доступен внутри docker-сети по адресу `http://nosqli-lab-backend:5000`
+
+### Проверка NoSQLi
+```bash
+docker compose run --rm --no-deps agent \
+  python -u agent.py \
+  --task "Проверь NoSQLi на стенде http://nosqli-lab-backend:5000. Используй инструмент test_nosqli_lab."
+```
+
+### Отключить проверку NoSQLi
+```bash
+docker compose run --rm --no-deps agent \
+  python -u agent.py --no-nosqli-lab
+```
+
+### Переопределить URL NoSQLi-лабы
+```bash
+docker compose run --rm --no-deps agent \
+  python -u agent.py \
+  --nosqli-lab-url http://nosqli-lab-backend:5000
+```

@@ -41,6 +41,38 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+  # ========= MongoDB для NoSQLi-стенда =========
+  nosqli-mongo:
+    image: mongo:7.0
+    container_name: nosqli-mongo
+    restart: unless-stopped
+    volumes:
+      - nosqli-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ========= тренировочный стенд для NoSQLi =========
+  nosqli-lab-backend:
+    build: laboratorys/nosqli
+    container_name: nosqli-lab-backend
+    depends_on:
+      nosqli-mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=mongodb://nosqli-mongo:27017
+    ports:
+      - "5002:5000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
   # ========= отдельный профиль LFI/RFI =========
   fi-lab:
     profiles: [file-inclusion]
@@ -133,6 +165,8 @@ services:
         condition: service_healthy
       ssrf-flask:
         condition: service_healthy
+      nosqli-lab-backend:
+        condition: service_healthy
     # ========= переменные окружения =========
     environment:
       - TARGET_URL=http://juice-shop:3000
@@ -140,6 +174,8 @@ services:
       - RULES_PATH=/app/rules/rules_semgrep.yaml
       - SQLI_LAB_URL=http://sqli-lab-backend:5000
       - SQLI_SOURCE_PATH=/app/sqli-lab
+      - NOSQLI_LAB_URL=http://nosqli-lab-backend:5000
+      - NOSQLI_SOURCE_PATH=/app/nosqli-lab
     env_file:
       - .env #болле универсально: естли есть langsmith
     volumes:
@@ -147,6 +183,7 @@ services:
       - ./juice-shop:/app/juice-shop:ro
       - ./target:/app/target:ro  
       - ./laboratorys/sqli:/app/sqli-lab:ro
+      - ./laboratorys/nosqli:/app/nosqli-lab:ro
     working_dir: /app
     networks: [default, file-inclusion-lab]
     command: >
@@ -182,3 +219,5 @@ networks:
   default: {}
   file-inclusion-lab:
     internal: true
+volumes:
+  nosqli-mongo-data:
