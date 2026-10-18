@@ -1,6 +1,5 @@
 FROM alpine:latest
 
-# cистемные зависимости
 RUN apk add --no-cache \
     python3 \
     py3-pip \
@@ -8,9 +7,13 @@ RUN apk add --no-cache \
     iptables \
     tcpdump \
     curl \
-    bash
+    bash \
+    libnetfilter_queue-dev \
+    gcc \
+    musl-dev \
+    linux-headers \
+    python3-dev
 
-# Python-зависимости
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 

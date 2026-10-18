@@ -5,10 +5,12 @@ services:
     container_name: spoof-victim
     command: >
       sh -c "
-        apk add --no-cache iproute2 tcpdump curl;
+        apk add --no-cache iproute2 tcpdump curl bind-tools;
         ip route add default via 172.28.0.1 || true;
         sleep infinity
       "
+    volumes:
+      - ./victim_resolve.conf:/etc/resolv.conf:ro
     networks:
       spoof-net:
         ipv4_address: 172.28.0.10
@@ -32,6 +34,8 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    sysctls:
+      net.ipv4.ip_forward: 1
     networks:
       spoof-net:
         ipv4_address: 172.28.0.66
@@ -39,6 +43,20 @@ services:
       - .:/app
     working_dir: /app
     command: sleep infinity
+    restart: unless-stopped
+
+  # ─── DNS-сервер ──────────────────────────────────────────
+  dns-server:
+    image: alpine:latest
+    container_name: spoof-dns
+    command: >
+      sh -c "
+        apk add --no-cache dnsmasq;
+        dnsmasq -k --log-queries --address=/example.com/93.184.216.34;
+      "
+    networks:
+      spoof-net:
+        ipv4_address: 172.28.0.53
     restart: unless-stopped
 
 networks:
