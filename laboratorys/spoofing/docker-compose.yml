@@ -1,0 +1,50 @@
+services:
+  # ─── Жертва ──────────────────────────────────────────────
+  victim:
+    image: alpine:latest
+    container_name: spoof-victim
+    command: >
+      sh -c "
+        apk add --no-cache iproute2 tcpdump curl;
+        ip route add default via 172.28.0.1 || true;
+        sleep infinity
+      "
+    networks:
+      spoof-net:
+        ipv4_address: 172.28.0.10
+    cap_add:
+      - NET_RAW
+    restart: unless-stopped
+
+  # ─── Цель ────────────────────────────────────────────────
+  target:
+    image: nginx:alpine
+    container_name: spoof-target
+    networks:
+      spoof-net:
+        ipv4_address: 172.28.0.20
+    restart: unless-stopped
+
+  # ─── Атакующий ───────────────────────────────────────────
+  attacker:
+    build: .
+    container_name: spoof-attacker
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      spoof-net:
+        ipv4_address: 172.28.0.66
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: sleep infinity
+    restart: unless-stopped
+
+networks:
+  spoof-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+          gateway: 172.28.0.1
