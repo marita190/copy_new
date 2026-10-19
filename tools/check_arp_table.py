@@ -86,7 +86,7 @@ def check_arp_table(container_name: str, compare_with_previous: bool = False):
                     "new_mac": mac,
                     "severity": "HIGH",
                     "reason": "MAC изменился - возможен ARP-спуфинг"})
-        for ip in entries:
+        for ip, mac in new_snapshots.items():
             if ip not in previous: # появились новые записи
                 anomalies.append({
                     "ip": ip,

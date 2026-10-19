@@ -17,7 +17,7 @@ def run_arp_spoof(victim_ip: str = "172.28.0.10", target_ip: str = "172.28.0.20"
     # ========== запуск скрипта ========== 
     try:
         result = subprocess.run(
-            ["docker", "exec", attacker, "timeout", 10, "python3", "/app/arp_spoofing.py"],
+            ["docker", "exec", attacker, "timeout", "10", "python3", "/app/arp_spoofing.py"],
             capture_output=True,
             text=True,
             timeout=20)
