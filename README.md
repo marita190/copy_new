@@ -172,3 +172,16 @@ docker compose run --rm --no-deps agent \
   python -u agent.py \
   --nosqli-lab-url http://nosqli-lab-backend:5000
 ```
+
+## SPOOFING Lab
+
+### Запуск лабы
+```bash
+cd laboratorys/spoofing/
+docker compose up -d --build
+```
+### Запуск агента с задачей
+из корня проекта
+```bash
+python3 agent.py --task "Проверь ARP-таблицу spoof-victim через check_arp_table. Запусти run_arp_spoofing. Проверь ARP снова через check_arp_table с compare_with_previous=True. Опиши найденные аномалии с критичностью и рекомендациями."
+```
