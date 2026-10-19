@@ -9,6 +9,8 @@ from .list_files import list_files
 from .test_sqli_lab import test_sqli_lab
 from .check_file_inclusion import check_file_inclusion
 from .test_nosqli_lab import test_nosqli_lab
+from .check_arp_table import check_arp_table
+from .run_arp_spoofing import run_arp_spoof
 
 ALL_TOOLS = [
     check_idor,
@@ -21,8 +23,11 @@ ALL_TOOLS = [
     list_files,
     test_sqli_lab,
     check_file_inclusion,
-    test_nosqli_lab
+    test_nosqli_lab,
+    check_arp_table,
+    run_arp_spoof
 ]
 
 __all__ = ["ALL_TOOLS", "check_idor", "run_semgrep", "test_sqli_login", "read_file", "read_file_around_line", 
-           "run_nuclei", "run_zap_scan", "list_files", "test_sqli_lab", "check_file_inclusion", "test_nosqli_lab"]
+           "run_nuclei", "run_zap_scan", "list_files", "test_sqli_lab", "check_file_inclusion", "test_nosqli_lab", 
+           "check_arp_table", "run_arp_spoof"]
