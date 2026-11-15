@@ -21,6 +21,9 @@ from .check_cookie_flags import check_cookie_flags
 from .test_default_credentials import test_default_credentials
 from .rank_findings import rank_findings
 from .http_request_with_auth import http_request_with_auth
+from .test_xss_reflected import test_xss_reflected
+from .test_xxe_upload import test_xxe_upload
+
 
 
 ALL_TOOLS = [
@@ -46,10 +49,12 @@ ALL_TOOLS = [
     check_cookie_flags,
     test_default_credentials,
     rank_findings,
-    http_request_with_auth
+    http_request_with_auth,
+    test_xss_reflected,
+    test_xxe_upload
 ]
 
 __all__ = ["ALL_TOOLS", "check_idor", "run_semgrep", "test_sqli_login", "read_file", "read_file_around_line", 
            "run_nuclei", "run_zap_scan", "list_files", "test_sqli_lab", "check_file_inclusion", "test_nosqli_lab", 
            "check_arp_table", "run_arp_spoof", "test_dan", "parser_html_forms", "http_request", "save_finding", "generate_report", "check_security_headers",
-            "check_cookie_flags", "test_default_credentials", "rank_findings", "http_request_with_auth"]
+            "check_cookie_flags", "test_default_credentials", "rank_findings", "http_request_with_auth", "test_xss_reflected", "test_xxe_upload"]

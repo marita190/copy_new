@@ -177,6 +177,8 @@ services:
       - NOSQLI_LAB_URL=http://nosqli-lab-backend:5000
       - NOSQLI_SOURCE_PATH=/app/nosqli-lab
       - DAN_LAB_URL=http://dan-llm:5001
+      - COMPOSE_NETWORK=cyber_security_agent_default
+      - HOST_REPORTS_DIR=${PWD}/reports
     env_file:
       - .env #болле универсально: естли есть langsmith
     volumes:

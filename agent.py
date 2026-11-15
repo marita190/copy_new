@@ -22,7 +22,7 @@ NSU_TOKEN = os.getenv("NSU_TOKEN")
 if not NSU_TOKEN:
     raise RuntimeError("Создайте файл .env в вашей директории и укажите: NSU_TOKEN='токен Беспалова'")
 
-MAX_TOOL_CALLS = 8
+MAX_TOOL_CALLS = 30
 MAX_REVISIONS = 2
 
 llm = ChatOpenAI(
@@ -288,6 +288,10 @@ if __name__ == "__main__":
                         help="Режим ZAP-сканирования")
     parser.add_argument("--no-zap", action="store_true", help="не запускать ZAP")
 
+     # ============ Nuclei ============
+    parser.add_argument("--no-nuclei", action="store_true",
+                        help="не запускать Nuclei")
+    
     # ============ SQLi Lab ============
     parser.add_argument("--sqli-lab-url", default=None,
                         help="URL SQLi Lab стенда")
@@ -349,6 +353,12 @@ if __name__ == "__main__":
         if not args.no_zap and ZAP_URL:
             parts.append(
                 f"Запусти ZAP-скан ({ZAP_MODE}) на {ZAP_URL}."
+            )
+
+        # ============ Nuclei ============
+        if not args.no_nuclei:
+            parts.append(
+                f"Запусти Nuclei на {TARGET_URL} для поиска известных уязвимостей."
             )
 
         # ============ SQLi Lab ============
