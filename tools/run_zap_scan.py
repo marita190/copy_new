@@ -12,6 +12,7 @@ SCAN_MODES = {
     "api": "zap-api-scan.py"
 }
 
+COMPOSE_NETWORK = os.getenv("COMPOSE_NETWORK", "cyber_security_agent_default")
 
 @tool
 def run_zap_scan(target_url: str, scan_mode: str, auth_token: str = ''):
@@ -38,8 +39,9 @@ def run_zap_scan(target_url: str, scan_mode: str, auth_token: str = ''):
     script = SCAN_MODES[scan_mode]
 
     # ========== подготовка папки отчётов ==========
-    output_dir = os.path.abspath("reports")
-    os.makedirs(output_dir, exist_ok=True)
+    agent_dir = "/app/reports"                             
+    host_dir = os.getenv("HOST_REPORTS_DIR", agent_dir)     
+    os.makedirs(agent_dir, exist_ok=True)
 
     # ========== сборка команды Docker ==========
     json_report = "zap_report.json"
@@ -60,8 +62,8 @@ def run_zap_scan(target_url: str, scan_mode: str, auth_token: str = ''):
     cmd = [
         "docker", "run", "--rm",
         "--user", "root",
-        "--network", "host",
-        "-v", f"{output_dir}:/zap/wrk/:rw",   
+       "--network", COMPOSE_NETWORK,  
+        "-v", f"{host_dir}:/zap/wrk/:rw",   
         "zaproxy/zap-stable",
         script,
         "-t", target_url,
@@ -85,7 +87,7 @@ def run_zap_scan(target_url: str, scan_mode: str, auth_token: str = ''):
         return f"возникла ошибка: {e}"
 
     # ========== извлечение алертов ==========
-    json_path = os.path.join(output_dir, json_report)
+    json_path = os.path.join(agent_dir, json_report)
 
     if not os.path.exists(json_path):
         return f"ZAP: отчёт не создан: {json_path}"
@@ -125,7 +127,7 @@ def run_zap_scan(target_url: str, scan_mode: str, auth_token: str = ''):
         "alerts": alerts[:30],
         "reports": {
             "json": json_path,
-            "html": os.path.join(output_dir, html_report),
+            "html": os.path.join(host_dir, html_report),
         },
     }
 
