@@ -7,3 +7,4 @@ python-dotenv>=1.0.0
 requests>=2.31.0
 flask>=3.0,<4
 grandalf>=0.8
+cbor2>=5.0.0

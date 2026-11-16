@@ -1,0 +1,20 @@
+services:
+  webauthn-lab:
+    build: ./plugins/webauthn_plugin/webauthn_lab
+    container_name: webauthn-lab
+    ports:
+      - "5001:5001"
+    environment:
+      - RP_ID=localhost
+      - ORIGIN=http://localhost:5001
+    restart: unless-stopped
+
+  agent:
+    depends_on:
+      webauthn-lab:
+        condition: service_started
+    environment:
+      - WEBAUTHN_LAB_URL=http://webauthn-lab:5001
+    volumes:
+      - ./agent_plugin.py:/app/agent_plugin.py:ro
+      - ./plugins:/app/plugins:ro
