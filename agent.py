@@ -181,6 +181,15 @@ def finding_node(state: AgentState) -> dict:
         return {}
 
     results.reverse()
+    results = [str(r)[:2000] for r in results]
+    total = 0
+    trimmed = []
+    for r in results:
+        if total + len(r) > 16000:
+            trimmed.append("... [остальные результаты опущены из-за лимита]")
+            break
+        trimmed.append(r)
+        total += len(r)
     prompt = (
         f"Проанализируй результаты инструментов:\n{results}\n"
         "Сформируй отдельный Finding для каждой уязвимости. "
